@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Check-in</title>
+    <style>
+      body { font-family: system-ui, Arial; margin: 16px; }
+      .container { max-width: 720px; margin: 0 auto; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+      .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+      .tab { padding: 8px 12px; border: 1px solid #ddd; border-radius: 999px; cursor: pointer; }
+      .tab.active { background: #111; color: #fff; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      label { font-size: 14px; color: #444; margin-bottom:6px; display:block; }
+      input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; }
+      button { padding: 10px 14px; border: none; border-radius: 10px; cursor: pointer; }
+      .primary { background: #111; color: #fff; }
+      .status { margin-top: 14px; padding: 14px; border-radius: 12px; font-weight: 600; }
+      #qr-region { width: 100%; min-height: 320px; }
+      .muted { color: #666; font-size: 12px; }
+    </style>
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Check-in</h2>
+      <div class="card">
+        <div class="tabs">
+          <div class="tab active" data-tab="scan">Quét QR</div>
+          <div class="tab" data-tab="manual">Nhập tay</div>
+        </div>
+
+        <div id="tab-scan">
+          <div id="qr-region"></div>
+          <p class="muted">Hướng camera vào QR. Khi đọc được, hệ thống sẽ tự check-in.</p>
+        </div>
+
+        <div id="tab-manual" style="display:none;">
+          <div class="row">
+            <div>
+              <label>Họ và tên</label>
+              <input id="fullName" placeholder="Nguyễn Văn A" />
+            </div>
+            <div>
+              <label>Đơn vị công tác</label>
+              <input id="org" placeholder="Công ty ABC" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px;">
+            <div>
+              <label>Nhóm khách</label>
+              <select id="group">
+                <option>VIP</option>
+                <option>Diễn giả</option>
+                <option>Khách mời</option>
+                <option>Nội bộ</option>
+                <option>Khác</option>
+              </select>
+            </div>
+            <div>
+              <label>ID (tùy chọn)</label>
+              <input id="id" placeholder="Mã/ID từ QR" />
+            </div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:8px;">
+            <button class="primary" id="btnManual">Check-in</button>
+            <button id="btnClear">Xóa</button>
+          </div>
+        </div>
+
+        <div id="status" class="status" style="display:none;"></div>
+      </div>
+      <p class="muted">Màu nhóm phản ánh theo cấu hình từ server.</p>
+    </div>
+
+    <script>
+      const GROUP_COLORS = <?= JSON.stringify(groupColors) ?>;
+
+      const tabs = document.querySelectorAll('.tab');
+      const tabScan = document.getElementById('tab-scan');
+      const tabManual = document.getElementById('tab-manual');
+      tabs.forEach(t => t.addEventListener('click', () => {
+        tabs.forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        tabScan.style.display = t.dataset.tab === 'scan' ? '' : 'none';
+        tabManual.style.display = t.dataset.tab === 'manual' ? '' : 'none';
+      }));
+
+      const statusEl = document.getElementById('status');
+      function showStatus(result) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = (result && result.color) || '#eee';
+        statusEl.textContent = result?.message || '—';
+      }
+
+      let html5Qrcode;
+      function startScanner() {
+        html5Qrcode = new Html5Qrcode('qr-region');
+        Html5Qrcode.getCameras().then(devices => {
+          const camId = devices?.[0]?.id;
+          if (!camId) return;
+          html5Qrcode.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: 240 },
+            (decodedText) => {
+              if (!decodedText) return;
+              html5Qrcode.pause(true);
+              google.script.run.withSuccessHandler(res => {
+                showStatus(res);
+                setTimeout(() => html5Qrcode.resume(), 1500);
+              }).checkIn({ raw: decodedText });
+            }
+          );
+        }).catch(() => {});
+      }
+      window.addEventListener('load', startScanner);
+
+      document.getElementById('btnManual').addEventListener('click', () => {
+        const data = {
+          fullName: document.getElementById('fullName').value.trim(),
+          org: document.getElementById('org').value.trim(),
+          group: document.getElementById('group').value.trim(),
+          id: document.getElementById('id').value.trim()
+        };
+        google.script.run.withSuccessHandler(showStatus).checkIn(data);
+      });
+
+      document.getElementById('btnClear').addEventListener('click', () => {
+        ['fullName','org','id'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('group').value = 'Khác';
+        statusEl.style.display = 'none';
+      });
+    </script>
+  </body>
+</html>
